@@ -69,7 +69,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # fleet visibility all rest on this string. Two different programs reporting the same
 # version makes a stale copy indistinguishable from a current one and prevents the
 # updater from retrieving it — the exact silent drift automatic updates exist to end.
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 # A PUBLIC, RUNNER-ONLY REPOSITORY is the update boundary. The main Novix repository
 # is private, and giving this Mac a credential that can read the whole product just
@@ -82,9 +82,31 @@ UPDATE_MANIFEST_URL = (
 UPDATE_SOURCE_URL = (
     "https://raw.githubusercontent.com/jakemoshel/Novix-Mac-Runner/main/novix_mac_runner.py"
 )
+UPDATE_SIGNATURE_URL = (
+    "https://raw.githubusercontent.com/jakemoshel/Novix-Mac-Runner/main/manifest.sig"
+)
 UPDATE_INTERVAL_SECONDS = 300
 UPDATE_TIMEOUT_SECONDS = 30
 UPDATE_MAX_BYTES = 1024 * 1024
+UPDATE_SIGNATURE_MAX_BYTES = 8192
+
+# THE PUBLIC KEY IS THE TRUST ANCHOR. The distribution repository is intentionally
+# readable by anybody, and its manifest checksum only proves the source matches that
+# manifest. It does not prove who wrote either one. The matching private key exists
+# only as a secret in the private product repository's release workflow, so gaining
+# write access to the public mirror is not enough to make a Mac execute new code.
+UPDATE_SIGNING_PUBLIC_KEY = b"""-----BEGIN PUBLIC KEY-----
+MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA1xggKQP63+Vcvf05Oy25
+8s1pZZxtjtkF/QFHsBGbHV6qeQUvShGXlrH4197EgdNCIR0s4Gk0yhvSsRU7FScF
+idxfI4MJMjKrvSUd6H+cxMo6kuIMkP5t7pueL24l3sN7Cbp20Yg4xoOoB4CN1PEf
+vVz5OIslG3qPJZtDi0wORETxXz+nqOYnCpkeqjNhklibBrrDVPnl0yQnGK1e7eud
+xYcmEsi4tp1A1RN7cs5Bzg3J8YASYxswXhPbSB/OVTxKsRXJnPujVq3Ww5i/C+s2
+AZuhzWlcA0KP0ai+leVB6OHrv1aB36pCae8FHNquftH+BGuiuF1AIODYN7mQPqs+
+x7Em9p8cMFZwikW7AlUCNpKh9PMKcUwo/YwZ7eqrkIb8OW1yhJV9z9+I1s4A+AvU
+naCiFsOjTWdfsfnqxluGoiBNzCC7HqpICDOZdtcd+5CEK2PDVHnMZzn3MmG0Eop9
+w8U7Kex8bAbLqylxAWrU9bFbM+T+71a90ut6lgo99cNnAgMBAAE=
+-----END PUBLIC KEY-----
+"""
 
 # How long each external command may take. A cold xcodebuild on a fresh clone is
 # minutes; the server's own job ceiling (NOVIX_MAC_RUNNER_JOB_TTL_SECONDS, 30 minutes
@@ -309,13 +331,45 @@ def _auto_update_enabled() -> bool:
     return os.path.abspath(__file__) == os.path.abspath(_installed_path())
 
 
-def _download(url: str) -> bytes:
+def _download(url: str, max_bytes: int = UPDATE_MAX_BYTES) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": f"novix-mac-runner/{VERSION}"})
     with urllib.request.urlopen(request, timeout=UPDATE_TIMEOUT_SECONDS) as response:
-        data = response.read(UPDATE_MAX_BYTES + 1)
-    if len(data) > UPDATE_MAX_BYTES:
+        data = response.read(max_bytes + 1)
+    if len(data) > max_bytes:
         raise ValueError("update payload is too large")
     return data
+
+
+def verify_manifest_signature(manifest: bytes, signature: bytes) -> bool:
+    """Whether the release manifest was signed by Novix's private release key.
+
+    macOS ships ``/usr/bin/openssl``. We still fail closed when it is absent or
+    refuses the signature: automatic updates are a convenience, and staying on the
+    known-good runner is always safer than weakening the trust check.
+    """
+    openssl = "/usr/bin/openssl"
+    if not os.path.isfile(openssl) or len(signature) > UPDATE_SIGNATURE_MAX_BYTES:
+        return False
+    try:
+        with tempfile.TemporaryDirectory(prefix="novix-runner-signature-") as directory:
+            manifest_path = os.path.join(directory, "manifest.json")
+            signature_path = os.path.join(directory, "manifest.sig")
+            public_path = os.path.join(directory, "release-public.pem")
+            with open(manifest_path, "wb") as handle:
+                handle.write(manifest)
+            with open(signature_path, "wb") as handle:
+                handle.write(signature)
+            with open(public_path, "wb") as handle:
+                handle.write(UPDATE_SIGNING_PUBLIC_KEY)
+            checked = subprocess.run(
+                [openssl, "dgst", "-sha256", "-verify", public_path,
+                 "-signature", signature_path, manifest_path],
+                capture_output=True,
+                timeout=15,
+            )
+            return checked.returncode == 0
+    except Exception:
+        return False
 
 
 def maybe_self_update(last_check: List[float], *, force: bool = False) -> bool:
@@ -335,8 +389,13 @@ def maybe_self_update(last_check: List[float], *, force: bool = False) -> bool:
         last_check[0] = now
     try:
         manifest = _download(UPDATE_MANIFEST_URL)
+        signature = _download(UPDATE_SIGNATURE_URL, UPDATE_SIGNATURE_MAX_BYTES)
     except Exception as exc:
         log(f"automatic update check failed: {exc.__class__.__name__}")
+        return False
+
+    if not verify_manifest_signature(manifest, signature):
+        log("automatic update refused: the release manifest signature is invalid")
         return False
 
     remote_version, _wanted, invalid = _manifest_fields(manifest)

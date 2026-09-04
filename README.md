@@ -96,16 +96,20 @@ machine, and the "Safari on macOS" card on the Sandbox settings page goes live.
 it writes by hand is described here so the plist is readable rather than magic.
 
 The installed runner also keeps itself current. Every five minutes, while it is
-between jobs, it checks the public runner-only repository. A newer version is accepted
-only when its manifest version, embedded version and SHA-256 all agree; the candidate
-must compile and answer `--version` under the Mac's own Python before it atomically
-replaces `~/novix/novix_mac_runner.py`. The previous file remains at
+between jobs, it checks the public runner-only repository. Public means anybody can
+audit and download it, not that anybody can publish an update: the runner embeds the
+Novix release public key and rejects a manifest without its RSA/SHA-256 signature.
+Only the matching private signing key in the private product repository can produce
+one. A newer version is then accepted only when its manifest version, embedded version
+and SHA-256 all agree; the candidate must compile and answer `--version` under the
+Mac's own Python before it atomically replaces `~/novix/novix_mac_runner.py`. The
+previous file remains at
 `~/novix/novix_mac_runner.py.previous` for manual recovery. Set
 `NOVIX_MAC_RUNNER_AUTO_UPDATE=0` in the LaunchAgent only when deliberately pinning a
 machine. Source checkouts never update themselves — only the installer's exact
 `~/novix/novix_mac_runner.py` destination does.
 
-This means version 1.4.0 needs one final manual reinstall to gain the updater. Later
+This means version 1.5.0 needs one final manual reinstall to gain the signed updater. Later
 runner releases do not need another AirDrop or installer run.
 
 **NEVER RUN IT FROM ~/Desktop, ~/Documents OR ~/Downloads.** Those are TCC-protected,
