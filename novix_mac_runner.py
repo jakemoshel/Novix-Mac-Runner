@@ -69,7 +69,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # fleet visibility all rest on this string. Two different programs reporting the same
 # version makes a stale copy indistinguishable from a current one and prevents the
 # updater from retrieving it — the exact silent drift automatic updates exist to end.
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 
 # A PUBLIC, RUNNER-ONLY REPOSITORY is the update boundary. The main Novix repository
 # is private, and giving this Mac a credential that can read the whole product just
@@ -85,7 +85,7 @@ UPDATE_SOURCE_URL = (
 UPDATE_SIGNATURE_URL = (
     "https://raw.githubusercontent.com/jakemoshel/Novix-Mac-Runner/main/manifest.sig"
 )
-UPDATE_INTERVAL_SECONDS = 300
+UPDATE_INTERVAL_SECONDS = 6 * 60 * 60
 UPDATE_TIMEOUT_SECONDS = 30
 UPDATE_MAX_BYTES = 1024 * 1024
 UPDATE_SIGNATURE_MAX_BYTES = 8192

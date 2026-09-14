@@ -95,7 +95,7 @@ machine, and the "Safari on macOS" card on the Sandbox settings page goes live.
 `bash install.command` does all of this for you, including the one trap below. What
 it writes by hand is described here so the plist is readable rather than magic.
 
-The installed runner also keeps itself current. Every five minutes, while it is
+The installed runner also keeps itself current. Every six hours, while it is
 between jobs, it checks the public runner-only repository. Public means anybody can
 audit and download it, not that anybody can publish an update: the runner embeds the
 Novix release public key and rejects a manifest without its RSA/SHA-256 signature.
